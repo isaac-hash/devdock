@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -26,7 +28,11 @@ var initCmd = &cobra.Command{
 
 		var projectType string
 		if _, err := os.Stat("package.json"); err == nil {
-			projectType = "node"
+			if isReactApp() {
+				projectType = "react"
+			} else {
+				projectType = "node"
+			}
 		} else if _, err := os.Stat("requirements.txt"); err == nil {
 			projectType = "python"
 		} else if _, err := os.Stat("pyproject.toml"); err == nil {
@@ -39,14 +45,22 @@ var initCmd = &cobra.Command{
 		fmt.Printf("✅ Detected %s project\n", projectType)
 
 		// Run docker init unless skipped
+		// Run docker init unless skipped
 		if !skipDocker {
-			fmt.Println("🐳 Running docker init...")
-			dockerCmd := exec.Command("docker", "init")
-			dockerCmd.Stdin = os.Stdin
-			dockerCmd.Stdout = os.Stdout
-			dockerCmd.Stderr = os.Stderr
-			if err := dockerCmd.Run(); err != nil {
-				return fmt.Errorf("docker init failed: %w", err)
+			if projectType == "react" {
+				fmt.Println("⚛️  React/Vite detected. Using custom Docker setup...")
+				if err := generateReactConfig(); err != nil {
+					return err
+				}
+			} else {
+				fmt.Println("🐳 Running docker init...")
+				dockerCmd := exec.Command("docker", "init")
+				dockerCmd.Stdin = os.Stdin
+				dockerCmd.Stdout = os.Stdout
+				dockerCmd.Stderr = os.Stderr
+				if err := dockerCmd.Run(); err != nil {
+					return fmt.Errorf("docker init failed: %w", err)
+				}
 			}
 		}
 
@@ -85,4 +99,43 @@ jobs:
 		fmt.Println("🚀 DevDock initialization complete! Try 'devdock dev'")
 		return nil
 	},
+}
+
+func isReactApp() bool {
+	data, err := os.ReadFile("package.json")
+	if err != nil {
+		return false
+	}
+	var pkg struct {
+		Dependencies    map[string]string `json:"dependencies"`
+		DevDependencies map[string]string `json:"devDependencies"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return false
+	}
+	for k := range pkg.Dependencies {
+		if strings.Contains(k, "react") || strings.Contains(k, "vite") {
+			return true
+		}
+	}
+	for k := range pkg.DevDependencies {
+		if strings.Contains(k, "react") || strings.Contains(k, "vite") {
+			return true
+		}
+	}
+	return false
+}
+
+func generateReactConfig() error {
+	if err := os.WriteFile("Dockerfile", []byte(reactDockerfile), 0644); err != nil {
+		return fmt.Errorf("failed to write Dockerfile: %w", err)
+	}
+	if err := os.WriteFile("compose.yaml", []byte(reactCompose), 0644); err != nil {
+		return fmt.Errorf("failed to write compose.yaml: %w", err)
+	}
+	if err := os.WriteFile(".dockerignore", []byte(reactDockerignore), 0644); err != nil {
+		return fmt.Errorf("failed to write .dockerignore: %w", err)
+	}
+	fmt.Println("📄 Created Dockerfile, compose.yaml, .dockerignore for React")
+	return nil
 }
