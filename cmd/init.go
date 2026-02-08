@@ -26,34 +26,20 @@ var initCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("🔍 Detecting project type...")
 
-		var projectType string
-		if _, err := os.Stat("package.json"); err == nil {
-			if isReactApp() {
-				projectType = "react"
-			} else {
-				projectType = "node"
-			}
-		} else if _, err := os.Stat("requirements.txt"); err == nil {
-			projectType = "python"
-		} else if _, err := os.Stat("pyproject.toml"); err == nil {
-			projectType = "python"
-		} else if _, err := os.Stat("go.mod"); err == nil {
-			projectType = "go"
-		} else {
-			return fmt.Errorf("could not detect project type (no known files found)")
+		projectType := detectProjectType()
+		if projectType == "unknown" {
+			fmt.Println("⚠️ Could not detect project type automatically.")
 		}
-		fmt.Printf("✅ Detected %s project\n", projectType)
 
 		// Run docker init unless skipped
-		// Run docker init unless skipped
 		if !skipDocker {
-			if projectType == "react" {
-				fmt.Println("⚛️  React/Vite detected. Using custom Docker setup...")
-				if err := generateReactConfig(); err != nil {
+			if projectType != "unknown" {
+				fmt.Printf("✨ %s detected. Using DevDock optimized setup...\n", strings.Title(projectType))
+				if err := generateConfig(projectType); err != nil {
 					return err
 				}
 			} else {
-				fmt.Println("🐳 Running docker init...")
+				fmt.Println("🐳 Running standard docker init...")
 				dockerCmd := exec.Command("docker", "init")
 				dockerCmd.Stdin = os.Stdin
 				dockerCmd.Stdout = os.Stdout
@@ -101,7 +87,46 @@ jobs:
 	},
 }
 
-func isReactApp() bool {
+func checkFileExists(filename string) bool {
+	_, err := os.Stat(filename)
+	return err == nil
+}
+
+func detectProjectType() string {
+	if checkFileExists("package.json") {
+		// Differentiate between JS frameworks based on build tools
+		if isNextApp() {
+			return "next" // Next.js (SSR, Port 3000)
+		}
+		if isViteApp() {
+			return "vite" // React/Vue/Svelte + Vite (CSR, Port 5173)
+		}
+		return "node" // Generic Node.js (Express/Nest, Port 3000)
+	}
+	if checkFileExists("requirements.txt") || checkFileExists("pyproject.toml") {
+		return "python"
+	}
+	if checkFileExists("go.mod") {
+		return "go"
+	}
+	if checkFileExists("pom.xml") || checkFileExists("build.gradle") {
+		return "java"
+	}
+	if checkFileExists("composer.json") {
+		return "php"
+	}
+	return "unknown"
+}
+
+func isNextApp() bool {
+	return checkDependency("next")
+}
+
+func isViteApp() bool {
+	return checkDependency("vite")
+}
+
+func checkDependency(depName string) bool {
 	data, err := os.ReadFile("package.json")
 	if err != nil {
 		return false
@@ -114,28 +139,57 @@ func isReactApp() bool {
 		return false
 	}
 	for k := range pkg.Dependencies {
-		if strings.Contains(k, "react") || strings.Contains(k, "vite") {
+		if strings.Contains(k, depName) {
 			return true
 		}
 	}
 	for k := range pkg.DevDependencies {
-		if strings.Contains(k, "react") || strings.Contains(k, "vite") {
+		if strings.Contains(k, depName) {
 			return true
 		}
 	}
 	return false
 }
 
-func generateReactConfig() error {
-	if err := os.WriteFile("Dockerfile", []byte(reactDockerfile), 0644); err != nil {
+func generateConfig(projectType string) error {
+	var dockerfile, compose string
+	dockerignore := nodeDockerignore // Default ignore list
+
+	switch projectType {
+	case "vite":
+		dockerfile = viteDockerfile
+		compose = viteCompose
+	case "next":
+		dockerfile = nextDockerfile
+		compose = nextCompose
+	case "node":
+		dockerfile = nodeDockerfile
+		compose = nodeCompose
+	case "python":
+		dockerfile = pythonDockerfile
+		compose = pythonCompose
+	case "go":
+		dockerfile = goDockerfile
+		compose = goCompose
+	case "java":
+		dockerfile = javaDockerfile
+		compose = javaCompose
+	case "php":
+		dockerfile = phpDockerfile
+		compose = phpCompose
+	default:
+		return fmt.Errorf("unsupported project type: %s", projectType)
+	}
+
+	if err := os.WriteFile("Dockerfile", []byte(dockerfile), 0644); err != nil {
 		return fmt.Errorf("failed to write Dockerfile: %w", err)
 	}
-	if err := os.WriteFile("compose.yaml", []byte(reactCompose), 0644); err != nil {
+	if err := os.WriteFile("compose.yaml", []byte(compose), 0644); err != nil {
 		return fmt.Errorf("failed to write compose.yaml: %w", err)
 	}
-	if err := os.WriteFile(".dockerignore", []byte(reactDockerignore), 0644); err != nil {
+	if err := os.WriteFile(".dockerignore", []byte(dockerignore), 0644); err != nil {
 		return fmt.Errorf("failed to write .dockerignore: %w", err)
 	}
-	fmt.Println("📄 Created Dockerfile, compose.yaml, .dockerignore for React")
+	fmt.Printf("📄 Created Dockerfile, compose.yaml, .dockerignore for %s\n", projectType)
 	return nil
 }
