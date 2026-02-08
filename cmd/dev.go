@@ -15,7 +15,7 @@ var (
 
 func init() {
 	devCmd.Flags().BoolVarP(&detach, "detach", "d", false, "Run in detached mode")
-	devCmd.Flags().BoolVar(&watch, "watch", true, "Enable hot-reload (Docker Compose watch) - default true")
+	devCmd.Flags().BoolVar(&watch, "watch", false, "Enable hot-reload (Docker Compose watch)")
 	rootCmd.AddCommand(devCmd)
 }
 
