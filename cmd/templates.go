@@ -122,9 +122,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-# Standard port for many Python frameworks
 EXPOSE 8000
-CMD ["python", "app.py"]
+# Adjust CMD based on your framework:
+# FastAPI:  CMD ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+# Flask:    CMD ["flask", "run", "--host=0.0.0.0", "--port=8000"]
+# Django:   CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["python", "-m", "http.server", "8000"]
 
 # Production stage
 FROM python:3.11-slim AS production
@@ -132,8 +135,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-# Hint: Use gunicorn for production if applicable
-CMD ["python", "app.py"]
+# Adjust CMD for production:
+# FastAPI:  CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Flask:    CMD ["gunicorn", "-b", "0.0.0.0:8000", "app:app"]
+# Django:   CMD ["gunicorn", "-b", "0.0.0.0:8000", "myproject.wsgi:application"]
+CMD ["python", "-m", "http.server", "8000"]
 `
 
 const pythonCompose = `services:
